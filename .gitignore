@@ -28,8 +28,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Testing & Visual Output
-screenshots/
+/screenshots/
 frontend/screenshots/
+!docs/screenshots/
 test-results/
 frontend/test-results/
 playwright-report/

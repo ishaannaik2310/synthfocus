@@ -12,7 +12,7 @@ SynthFocus is a containerized, stateless application architected to run on **AWS
 > 
 > **Why scaling out breaks rate limits:**
 > 1. **In-Memory Concurrency Semaphore:** SynthFocus enforces an `asyncio.Semaphore(1)` to ensure only one focus group simulation runs at any given second, protecting the Google Gemini Free-Tier 15 RPM quota.
-> 2. **In-Memory Daily Quota Tracker:** Daily simulation consumption (120 runs/day budget) and per-IP hourly velocity limits are managed in-memory without an external database or Redis cache to maintain a zero-cost footprint.
+> 2. **In-Memory Daily Quota Tracker:** Daily simulation consumption (120 runs/day budget) and per-IP hourly velocity limits are managed in-memory without an external database or Redis cache to operate within free-tier limits without external infrastructure dependencies.
 > 
 > If you scale out to 2 or more backend tasks without a distributed lock manager, multiple instances will simultaneously dispatch requests to Gemini, immediately triggering `429 Too Many Requests` API quota rejections and breaking user sessions. The Next.js frontend, by contrast, is completely stateless and can scale to multiple tasks if desired.
 
@@ -173,7 +173,7 @@ docker push <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/synthfocus-front
 
 ## 7. AWS ECS Fargate Task Definition Template
 
-Below is a complete, production-ready ECS Task Definition JSON template combining both containers into a single task (or deployable as two separate services on ECS Fargate):
+Below is a sample ECS Task Definition JSON template combining both containers into a single task (or deployable as two separate services on ECS Fargate):
 
 ```json
 {

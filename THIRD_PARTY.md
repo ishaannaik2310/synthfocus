@@ -54,6 +54,7 @@ SynthFocus relies on open-source packages in the Node.js and Python ecosystems. 
 ## 3. Visual Media & Generated Assets
 
 - The hero figure cluster artwork (`frontend/public/images/hero-buyers.webp`) and accompanying section graphics were generated using Antigravity's image generation tool specifically for SynthFocus.
+- Images located in `docs/screenshots/` (`landing_overview.png`, `results.png`) are authentic screenshots of this project's own user interface.
 - Icons in `frontend/public/` are standard utility icons.
 
 ---
