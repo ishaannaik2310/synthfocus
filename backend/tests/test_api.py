@@ -11,16 +11,12 @@ from app.limiter import IPRateLimiter, GlobalDailyQuotaLimiter, safe_extract_cli
 
 @pytest.mark.asyncio
 async def test_health_check():
-    """Verify health check endpoint returns 200 with model info."""
+    """Verify health check endpoint returns 200 with minimal status ok."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/health")
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "model" in data
-        assert "semaphore_available" in data
-        assert "daily_quota" in data
+        assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio
@@ -155,3 +151,238 @@ async def test_global_daily_quota_limiter():
     assert await daily_limiter.is_allowed() is True
     await daily_limiter.record_run()
     assert await daily_limiter.is_allowed() is False
+
+
+def test_safe_extract_client_ip_untrusted_hops():
+    """Verify X-Forwarded-For is completely ignored when TRUSTED_PROXY_HOPS=0."""
+    scope = {
+        "type": "http",
+        "headers": [(b"x-forwarded-for", b"203.0.113.195")],
+        "client": ("192.168.1.5", 12345),
+    }
+    req = Request(scope)
+    # When hops=0, returns direct socket client host, ignoring header spoofing
+    assert safe_extract_client_ip(req, trusted_hops=0) == "192.168.1.5"
+
+
+@pytest.mark.asyncio
+async def test_ip_rate_limiter_stale_purge():
+    """Verify periodic purge of expired IP entries in IPRateLimiter."""
+    limiter = IPRateLimiter(max_requests=5, window_seconds=60)
+    now = time.time()
+    # IP 1: expired entry (timestamp 100 seconds ago)
+    limiter._requests["10.0.0.1"] = [now - 100]
+    # IP 2: active entry (timestamp right now)
+    limiter._requests["10.0.0.2"] = [now]
+
+    purged_count = limiter.purge_stale_entries(cutoff=now - 60)
+    assert purged_count == 1
+    assert "10.0.0.1" not in limiter._requests
+    assert "10.0.0.2" in limiter._requests
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_semaphore_race(monkeypatch):
+    """
+    Verify that two near-simultaneous requests don't queue:
+    One acquires the semaphore immediately, and the second receives 429 {"code": "busy"}.
+    """
+    from unittest.mock import patch
+
+    # Mock generator that holds the simulation open briefly
+    async def slow_mock_generator(*args, **kwargs):
+        yield {"event": "start", "data": {"status": "started"}}
+        await asyncio.sleep(0.3)
+        yield {"event": "final_report", "data": {"metrics": {}}}
+
+    monkeypatch.setattr("app.main.run_simulation_generator", slow_mock_generator)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Launch two near-simultaneous requests
+        task1 = client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "Valid product brief for concurrency race test 1."},
+        )
+        task2 = client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "Valid product brief for concurrency race test 2."},
+        )
+
+        res1, res2 = await asyncio.gather(task1, task2)
+        statuses = [res1.status_code, res2.status_code]
+
+        # Exactly one must succeed (200 SSE stream) and the other must be rejected (429 busy)
+        assert 200 in statuses
+        assert 429 in statuses
+
+        busy_res = res1 if res1.status_code == 429 else res2
+        assert busy_res.json().get("code") == "busy"
+
+        # After both complete, semaphore must be free
+        assert not SIMULATION_SEMAPHORE.locked()
+
+
+@pytest.mark.asyncio
+async def test_daily_counter_increments_exactly_once(monkeypatch):
+    """Verify the daily counter increments exactly once per executed run."""
+    from app.limiter import daily_limiter
+
+    async def fast_mock_generator(*args, **kwargs):
+        yield {"event": "start", "data": {"status": "started"}}
+        yield {"event": "final_report", "data": {"metrics": {}}}
+
+    monkeypatch.setattr("app.main.run_simulation_generator", fast_mock_generator)
+
+    initial_runs = daily_limiter._runs_today
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "Valid pitch brief testing daily counter increment."},
+        )
+        assert res.status_code == 200
+        assert daily_limiter._runs_today == initial_runs + 1
+
+
+@pytest.mark.asyncio
+async def test_error_sanitization_no_str_exc(monkeypatch):
+    """
+    Verify that unhandled exceptions are logged server-side and an opaque,
+    generic error message with code 'simulation_error' is sent to the client (no str(exc) leakage).
+    """
+    secret_internal_leak = "INTERNAL_LEAK_SECRET_KEY_DB_TIMEOUT_491823"
+
+    async def crashing_generator(*args, **kwargs):
+        raise RuntimeError(secret_internal_leak)
+        yield  # make it a generator
+
+    monkeypatch.setattr("app.main.run_simulation_generator", crashing_generator)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "Valid brief testing exception message masking."},
+        )
+        assert res.status_code == 200
+        text = res.text
+
+        # The internal exception string must NOT appear in the client response
+        assert secret_internal_leak not in text
+        # Must contain generic error code and safe message
+        assert "simulation_error" in text
+        assert "Simulation encountered an unexpected upstream error." in text
+
+        # Semaphore must be freed despite unhandled generator exception
+        assert not SIMULATION_SEMAPHORE.locked()
+
+
+@pytest.mark.asyncio
+async def test_record_run_exception_releases_semaphore(monkeypatch):
+    """
+    Verify that if daily_limiter.record_run() raises an exception between lock
+    acquisition and response return, the semaphore is cleanly released and subsequent
+    requests are NOT rejected as busy.
+    """
+    from app.limiter import daily_limiter
+    from unittest.mock import AsyncMock
+
+    # Force record_run to raise on the first call
+    call_count = 0
+
+    async def flaky_record_run():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("Database/Disk write failure during quota tracking")
+        return 1
+
+    monkeypatch.setattr(daily_limiter, "record_run", flaky_record_run)
+
+    async def fast_mock_generator(*args, **kwargs):
+        yield {"event": "start", "data": {"status": "started"}}
+        yield {"event": "final_report", "data": {"metrics": {}}}
+
+    monkeypatch.setattr("app.main.run_simulation_generator", fast_mock_generator)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Request 1 fails due to record_run raising
+        with pytest.raises(RuntimeError, match="Database/Disk write failure"):
+            await client.post(
+                "/api/simulate-focus-group",
+                json={"product_brief": "Valid brief where record_run will fail."},
+            )
+
+        # Semaphore MUST be released immediately
+        assert not SIMULATION_SEMAPHORE.locked()
+
+        # Request 2 must succeed and NOT be rejected with 429 busy
+        res2 = await client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "Valid brief for subsequent request."},
+        )
+        assert res2.status_code == 200
+        assert not SIMULATION_SEMAPHORE.locked()
+
+
+@pytest.mark.asyncio
+async def test_order_of_operations_guards(monkeypatch):
+    """
+    Verify exact order of operations:
+    1. Body validation
+    2. Per-IP hourly limit
+    3. Daily cap check
+    4. Semaphore busy check
+    5. Record run
+    Rejected requests must NOT take the semaphore or increment the daily quota.
+    """
+    from app.limiter import daily_limiter, ip_limiter
+
+    initial_runs = daily_limiter._runs_today
+    test_ip = "198.51.100.99"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Step 1: Body validation failure (too short)
+        res_body = await client.post(
+            "/api/simulate-focus-group",
+            json={"product_brief": "short"},
+            headers={"x-forwarded-for": test_ip},
+        )
+        assert res_body.status_code == 422
+        assert not SIMULATION_SEMAPHORE.locked()
+        assert daily_limiter._runs_today == initial_runs
+
+        # Step 2: Per-IP rate limit exhausted
+        ip_limiter._requests[test_ip] = [time.time()] * ip_limiter.max_requests
+        try:
+            res_ip = await client.post(
+                "/api/simulate-focus-group",
+                json={"product_brief": "Valid length brief for rate limit check."},
+                headers={"x-forwarded-for": test_ip},
+            )
+            assert res_ip.status_code == 429
+            assert res_ip.json().get("code") == "rate_limit"
+            assert not SIMULATION_SEMAPHORE.locked()
+            assert daily_limiter._runs_today == initial_runs
+        finally:
+            ip_limiter._requests.pop(test_ip, None)
+
+        # Step 3: Daily cap exhausted
+        original_max = daily_limiter.max_daily_runs
+        try:
+            daily_limiter.max_daily_runs = 0
+            res_daily = await client.post(
+                "/api/simulate-focus-group",
+                json={"product_brief": "Valid length brief for daily cap check."},
+            )
+            assert res_daily.status_code == 429
+            assert res_daily.json().get("code") == "daily_cap"
+            assert not SIMULATION_SEMAPHORE.locked()
+            assert daily_limiter._runs_today == initial_runs
+        finally:
+            daily_limiter.max_daily_runs = original_max
+
+

@@ -2,12 +2,14 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
+from starlette.background import BackgroundTask
 
 from app.config import get_settings
 from app.graph.workflow import run_simulation_generator
@@ -20,10 +22,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("synthfocus.api")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    quota = await daily_limiter.get_status()
+    logger.info(
+        "SynthFocus backend initialized. Model: %s, Batch size: %d, Batch sleep: %ds, Daily quota remaining: %d/%d",
+        settings.GEMINI_MODEL,
+        settings.BATCH_SIZE,
+        settings.BATCH_SLEEP_SECONDS,
+        quota["remaining_runs"],
+        quota["max_daily_runs"],
+    )
+    yield
+
+
 app = FastAPI(
     title="SynthFocus API",
     description="Stateless Synthetic AI Focus Group Simulator powered by Gemini and LangGraph",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS configuration driven by CORS_ORIGINS setting (default: http://localhost:3000,http://127.0.0.1:3000)
@@ -42,20 +61,23 @@ app.add_middleware(
 SIMULATION_SEMAPHORE = asyncio.Semaphore(1)
 
 
+class SemaphoreGuard:
+    """Guarantees idempotent release of an acquired asyncio.Semaphore across all termination paths."""
+
+    def __init__(self, semaphore: asyncio.Semaphore):
+        self.semaphore = semaphore
+        self.released = False
+
+    def release(self) -> None:
+        if not self.released:
+            self.released = True
+            self.semaphore.release()
+
+
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint for container orchestration and ALB health probes."""
-    settings = get_settings()
-    quota_status = await daily_limiter.get_status()
-    return {
-        "status": "healthy",
-        "engine": "SynthFocus",
-        "model": settings.GEMINI_MODEL,
-        "batch_size": settings.BATCH_SIZE,
-        "batch_sleep_seconds": settings.BATCH_SLEEP_SECONDS,
-        "semaphore_available": not SIMULATION_SEMAPHORE.locked(),
-        "daily_quota": quota_status,
-    }
+    """Minimal health check endpoint for container orchestration and ALB health probes."""
+    return {"status": "ok"}
 
 
 @app.post("/api/simulate-focus-group")
@@ -76,7 +98,19 @@ async def simulate_focus_group_stream(request: Request, payload: SimulationReque
     settings = get_settings()
     client_ip = safe_extract_client_ip(request, trusted_hops=settings.TRUSTED_PROXY_HOPS)
 
-    # 1. Global Daily Quota Check
+    # 1. Per-IP Hourly Rate Limiting
+    allowed = await ip_limiter.is_allowed(client_ip)
+    if not allowed:
+        logger.warning("Hourly rate limit exceeded for IP: %s", client_ip)
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "code": "rate_limit",
+                "detail": f"Hourly rate limit exceeded ({settings.RATE_LIMIT_SIMULATIONS_PER_HOUR} simulations/hr). Please try again later.",
+            },
+        )
+
+    # 2. Global Daily Quota Check
     if not await daily_limiter.is_allowed():
         logger.warning("Global daily quota reached. Rejecting simulation request from IP: %s", client_ip)
         return JSONResponse(
@@ -90,19 +124,7 @@ async def simulate_focus_group_stream(request: Request, payload: SimulationReque
             },
         )
 
-    # 2. Per-IP Hourly Rate Limiting
-    allowed = await ip_limiter.is_allowed(client_ip)
-    if not allowed:
-        logger.warning("Hourly rate limit exceeded for IP: %s", client_ip)
-        return JSONResponse(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={
-                "code": "rate_limit",
-                "detail": f"Hourly rate limit exceeded ({settings.RATE_LIMIT_SIMULATIONS_PER_HOUR} simulations/hr). Please try again later.",
-            },
-        )
-
-    # 3. Concurrency Semaphore Check
+    # 3. Concurrency Semaphore Check & Immediate Non-Yielding Acquire
     if SIMULATION_SEMAPHORE.locked():
         logger.warning("Simulation rejected: Engine busy. IP: %s", client_ip)
         return JSONResponse(
@@ -117,10 +139,19 @@ async def simulate_focus_group_stream(request: Request, payload: SimulationReque
             },
         )
 
-    async def sse_event_publisher() -> AsyncGenerator[dict, None]:
-        acquired = await SIMULATION_SEMAPHORE.acquire()
-        logger.info("Simulation lock acquired by IP: %s", client_ip)
+    await SIMULATION_SEMAPHORE.acquire()
+    guard = SemaphoreGuard(SIMULATION_SEMAPHORE)
+
+    # 4. Record Run with Exception Safety (Releases semaphore if record_run or response prep raises)
+    try:
         await daily_limiter.record_run()
+        logger.info("Simulation lock acquired and run recorded by IP: %s", client_ip)
+    except Exception as exc:
+        guard.release()
+        logger.error("Failed during simulation initialization after lock acquisition: %s", exc, exc_info=True)
+        raise
+
+    async def sse_event_publisher() -> AsyncGenerator[dict, None]:
         try:
             generator = run_simulation_generator(
                 product_brief=payload.product_brief,
@@ -140,16 +171,17 @@ async def simulate_focus_group_stream(request: Request, payload: SimulationReque
                 "event": "error",
                 "data": json.dumps({
                     "status": "error",
-                    "message": f"Simulation failed: {str(exc)}",
+                    "code": "simulation_error",
+                    "message": "Simulation encountered an unexpected upstream error. Please try again.",
                 }),
             }
         finally:
-            if acquired:
-                SIMULATION_SEMAPHORE.release()
-                logger.info("Simulation lock released by IP: %s", client_ip)
+            guard.release()
+            logger.info("Simulation lock released by IP: %s", client_ip)
 
     return EventSourceResponse(
         sse_event_publisher(),
+        background=BackgroundTask(guard.release),
         ping=15,  # Send SSE comment heartbeat every 15s to keep connections alive
         headers={
             "X-Accel-Buffering": "no",

@@ -20,7 +20,7 @@ export async function runSimulationStream(
   wasCancelledRecently = false
 ): Promise<void> {
   const apiUrl =
-    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
   const endpoint = `${apiUrl.replace(/\/$/, "")}/api/simulate-focus-group`;
 
   let response: Response;

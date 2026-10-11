@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import secrets
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from langgraph.graph import END, StateGraph
@@ -58,6 +59,7 @@ async def run_simulation_generator(
 
     batch_size = batch_size_override if batch_size_override is not None else settings.BATCH_SIZE
     batch_sleep = batch_sleep_override if batch_sleep_override is not None else settings.BATCH_SLEEP_SECONDS
+    sim_delimiter = secrets.token_hex(8)
 
     # 1. Initialize LangGraph compiled state graph
     compiled_graph = build_simulation_graph()
@@ -109,7 +111,7 @@ async def run_simulation_generator(
         }
 
         # Concurrently evaluate personas within the micro-batch
-        tasks = [evaluate_persona(p, product_brief, llm=llm) for p in batch_personas]
+        tasks = [evaluate_persona(p, product_brief, llm=llm, delimiter_token=sim_delimiter) for p in batch_personas]
         batch_results: List[PersonaEvaluation] = await asyncio.gather(*tasks)
 
         accumulated_evaluations.extend(batch_results)
@@ -168,6 +170,7 @@ async def run_simulation_generator(
         product_brief=product_brief,
         evaluations=accumulated_evaluations,
         llm=llm,
+        delimiter_token=sim_delimiter,
     )
 
     # Emit the complete final playbook as one event (no token-streaming)

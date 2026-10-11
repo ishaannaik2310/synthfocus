@@ -35,6 +35,15 @@ frontend/test-results/
 playwright-report/
 *.png.tmp
 
+# Local Scratch & Capture Specs
+frontend/capture-screens.ts
+frontend/scripts/
+backend/tests/run_live_test.py
+frontend/tests/capture.spec.ts
+frontend/tests/capture_visuals.spec.ts
+frontend/tests/responsive-check.spec.ts
+frontend/public/images/hero-3d-cluster.png
+
 # IDE & OS
 .agent/
 .vscode/

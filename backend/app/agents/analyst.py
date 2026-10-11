@@ -3,6 +3,7 @@ import asyncio
 import logging
 import math
 import random
+import secrets
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
@@ -10,6 +11,7 @@ from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import get_settings
+from app.models.personas_data import sanitize_brief
 from app.models.schema import FinalReport, PersonaEvaluation, SimulationMetrics
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,7 @@ async def synthesize_focus_group(
     product_brief: str,
     evaluations: List[PersonaEvaluation],
     llm: Optional[Any] = None,
+    delimiter_token: Optional[str] = None,
 ) -> FinalReport:
     """
     Runs the Reduce step of the Map-Reduce pipeline.
@@ -105,6 +108,10 @@ async def synthesize_focus_group(
     """
     settings = get_settings()
     metrics = compute_metrics(evaluations)
+    clean_brief = sanitize_brief(product_brief)
+    token = delimiter_token or secrets.token_hex(8)
+    start_delim = f"<<<PRODUCT_BRIEF_{token}>>>"
+    end_delim = f"<<<END_PRODUCT_BRIEF_{token}>>>"
 
     # Format personas summary for analyst prompt
     eval_summaries = []
@@ -118,9 +125,9 @@ async def synthesize_focus_group(
     formatted_evals = "\n".join(eval_summaries)
 
     prompt = f"""PRODUCT BRIEF EVALUATED:
-<<<PRODUCT_BRIEF>>>
-{product_brief}
-<<<END_PRODUCT_BRIEF>>>
+{start_delim}
+{clean_brief}
+{end_delim}
 
 QUANTITATIVE SUMMARY:
 - Total Personas: {metrics.total_personas}

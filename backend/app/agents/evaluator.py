@@ -36,13 +36,14 @@ async def evaluate_persona(
     persona: Dict[str, Any],
     product_brief: str,
     llm: Optional[Any] = None,
+    delimiter_token: Optional[str] = None,
 ) -> PersonaEvaluation:
     """
     Evaluates a single persona against a product brief.
     Includes exponential backoff for 429 and transient 503 responses.
     """
     settings = get_settings()
-    prompt_text = format_evaluation_prompt(persona, product_brief)
+    prompt_text = format_evaluation_prompt(persona, product_brief, delimiter_token=delimiter_token)
 
     if llm is None:
         llm = get_llm()
