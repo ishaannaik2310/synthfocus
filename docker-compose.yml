@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: synthfocus-backend
+    ports:
+      - "8000:8000"
+    # Environment variables loaded dynamically from file at runtime (never baked into image)
+    env_file:
+      - path: ./backend/.env
+        required: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked at build time for client JS bundling; for local Docker, point to host/localhost:8000
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: synthfocus-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
