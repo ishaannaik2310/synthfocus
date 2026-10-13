@@ -1,0 +1,157 @@
+name: Deploy to AWS ECS
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: "AWS Region"
+        required: true
+        default: "us-east-1"
+      ecs_cluster:
+        description: "ECS Cluster Name"
+        required: true
+        default: "synthfocus-cluster"
+      ecs_backend_service:
+        description: "Backend ECS Service Name"
+        required: true
+        default: "synthfocus-backend-service"
+      ecs_frontend_service:
+        description: "Frontend ECS Service Name"
+        required: true
+        default: "synthfocus-frontend-service"
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-aws.yml"
+
+# Prevent concurrent deployments — never cancel an in-flight deploy
+concurrency:
+  group: deploy-aws-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy to AWS ECS Fargate
+    runs-on: ubuntu-latest
+    # Prevent accidental runs on forks that don't have AWS secrets configured
+    if: github.repository == github.event.repository.full_name
+
+    env:
+      AWS_REGION:           ${{ inputs.aws_region          || secrets.AWS_REGION          || 'us-east-1' }}
+      ECS_CLUSTER:          ${{ inputs.ecs_cluster          || secrets.ECS_CLUSTER          || 'synthfocus-cluster' }}
+      ECS_BACKEND_SERVICE:  ${{ inputs.ecs_backend_service  || secrets.ECS_BACKEND_SERVICE  || 'synthfocus-backend-service' }}
+      ECS_FRONTEND_SERVICE: ${{ inputs.ecs_frontend_service || secrets.ECS_FRONTEND_SERVICE || 'synthfocus-frontend-service' }}
+      BACKEND_REPO:  synthfocus-backend
+      FRONTEND_REPO: synthfocus-frontend
+
+    steps:
+      # ── 1. Source ─────────────────────────────────────────────────────────
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ── 2. Locate App Root (monorepo-aware) ───────────────────────────────
+      - name: Locate App Directory
+        id: dir
+        run: |
+          if [ -d "synthfocus/backend" ]; then
+            echo "APP_DIR=synthfocus" >> $GITHUB_OUTPUT
+          else
+            echo "APP_DIR=." >> $GITHUB_OUTPUT
+          fi
+
+      # ── 3. AWS Auth ───────────────────────────────────────────────────────
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── 4. Docker Buildx (multi-platform + layer cache) ───────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 5. Build & Push — Backend ─────────────────────────────────────────
+      - name: Build & Push Backend Container to ECR
+        uses: docker/build-push-action@v5
+        with:
+          context:    ${{ steps.dir.outputs.APP_DIR }}/backend
+          file:       ${{ steps.dir.outputs.APP_DIR }}/backend/Dockerfile
+          platforms:  linux/amd64
+          push:       true
+          # Layer cache stored in ECR to speed up subsequent builds
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_REPO }}:cache
+          cache-to:   type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_REPO }}:cache,mode=max
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_REPO }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_REPO }}:latest
+
+      # ── 6. Build & Push — Frontend ────────────────────────────────────────
+      - name: Build & Push Frontend Container to ECR
+        uses: docker/build-push-action@v5
+        with:
+          context:    ${{ steps.dir.outputs.APP_DIR }}/frontend
+          file:       ${{ steps.dir.outputs.APP_DIR }}/frontend/Dockerfile
+          platforms:  linux/amd64
+          build-args: |
+            NEXT_PUBLIC_API_URL=
+          push:       true
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_REPO }}:cache
+          cache-to:   type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_REPO }}:cache,mode=max
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_REPO }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_REPO }}:latest
+
+      # ── 7. ECS Rolling Deployment ─────────────────────────────────────────
+      - name: Trigger ECS Rolling Deployment — Backend
+        run: |
+          echo "→ Forcing new deployment for Backend service..."
+          aws ecs update-service \
+            --cluster           "${{ env.ECS_CLUSTER }}" \
+            --service           "${{ env.ECS_BACKEND_SERVICE }}" \
+            --force-new-deployment \
+            --region            "${{ env.AWS_REGION }}"
+
+      - name: Trigger ECS Rolling Deployment — Frontend
+        run: |
+          echo "→ Forcing new deployment for Frontend service..."
+          aws ecs update-service \
+            --cluster           "${{ env.ECS_CLUSTER }}" \
+            --service           "${{ env.ECS_FRONTEND_SERVICE }}" \
+            --force-new-deployment \
+            --region            "${{ env.AWS_REGION }}"
+
+      # ── 8. Wait for Stability ─────────────────────────────────────────────
+      - name: Wait for ECS Services to Stabilise
+        run: |
+          echo "⏳ Waiting for both services to reach RUNNING state..."
+          aws ecs wait services-stable \
+            --cluster  "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_BACKEND_SERVICE }}" "${{ env.ECS_FRONTEND_SERVICE }}" \
+            --region   "${{ env.AWS_REGION }}"
+          echo "✅ All services are running and stable!"
+
+      # ── 9. Deployment Summary ─────────────────────────────────────────────
+      - name: Post Deployment Summary
+        if: always()
+        run: |
+          ALB_URL="${{ secrets.ALB_URL }}"
+          echo "## 🚀 SynthFocus Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **AWS Region** | \`${{ env.AWS_REGION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ECS Cluster** | \`${{ env.ECS_CLUSTER }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Backend Image** | \`${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_REPO }}:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Frontend Image** | \`${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_REPO }}:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$ALB_URL" ]; then
+            echo "| **Live URL** | [$ALB_URL]($ALB_URL) |" >> $GITHUB_STEP_SUMMARY
+          fi

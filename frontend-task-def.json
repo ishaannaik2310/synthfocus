@@ -1,0 +1,30 @@
+{
+  "family": "synthfocus-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::080641083030:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "synthfocus-frontend",
+      "image": "080641083030.dkr.ecr.ap-south-1.amazonaws.com/synthfocus-frontend:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/synthfocus-frontend",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

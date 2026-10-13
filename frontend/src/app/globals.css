@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #133ee8;
+  --color-canvas-deep: #0e2cb3;
+  --color-canvas-subtle: #1946f0;
+
+  --color-surface-card: #ffffff;
+  --color-surface-card-subtle: #f8f9fc;
+  --color-surface-quote: #fffdf0;
+  --color-surface-track: #e5e7eb;
+  --color-surface-translucent: rgba(255, 255, 255, 0.08);
+
+  --color-ink-card-primary: #0a0a0a;
+  --color-ink-card-muted: #6b7280;
+  --color-ink-card-subtle: #9ca3af;
+  --color-border-card: #e5e7eb;
+
+  --color-ink: #ffffff;
+  --color-ink-muted: #dce4ff;
+  --color-ink-subtle: #a5b4fc;
+  --color-ink-dark: #0a0a0a;
+  --color-ink-dark-muted: #4b5563;
+
+  --color-accent-yellow: #ffe500;
+  --color-accent-yellow-hover: #f0d800;
+  --color-on-accent-yellow: #000000;
+
+  --color-hairline: rgba(255, 255, 255, 0.15);
+  --color-hairline-strong: rgba(255, 255, 255, 0.28);
+
+  --color-palette-terracotta: #d95d39;
+  --color-palette-coral: #e06a3b;
+  --color-palette-pink: #f2a1b8;
+  --color-palette-stone: #f0f0f0;
+
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  --radius-panel: 12px;
+  --radius-button: 12px;
+  --radius-input: 10px;
+  --radius-chip: 9999px;
+
+  --font-sans: var(--font-inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  --font-condensed: var(--font-condensed, "Impact", "Arial Narrow Bold", -apple-system, BlinkMacSystemFont, sans-serif);
+  --font-mono: var(--font-mono, "JetBrains Mono", monospace);
+}
+
+:root {
+  color-scheme: dark;
+  background-color: #133ee8;
+  color: #ffffff;
+  --radius-panel: 12px;
+  --radius-button: 12px;
+  --radius-input: 10px;
+  --radius-chip: 9999px;
+}
+
+/* Design System Radius Utility Tokens */
+.rounded-panel {
+  border-radius: 12px;
+}
+.rounded-btn {
+  border-radius: 12px;
+}
+.rounded-field {
+  border-radius: 10px;
+}
+.rounded-tag {
+  border-radius: 9999px;
+}
+
+html {
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle architectural grid pattern background */
+.bg-grid-pattern {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 120px 100%;
+}
+
+@media (max-width: 640px) {
+  .bg-grid-pattern {
+    background-size: 60px 100%;
+  }
+}
+
+/* Condensed display headline styling */
+.font-display-condensed {
+  font-family: var(--font-display, "Impact", "Arial Narrow Bold", sans-serif);
+  text-transform: uppercase;
+  font-weight: 700;
+  font-synthesis: none;
+  letter-spacing: 0.01em;
+  line-height: 0.98;
+  text-shadow: none;
+}
+
+/* Custom scrollbars themed per Direction A */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) #0e2cb3;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0e2cb3;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Text selection themed */
+::selection {
+  background-color: #ffe500;
+  color: #000000;
+}
+
+/* Tabular figures for numbers and scores */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Idle float animation for the hero sculpture (slow 7s loop) */
+@keyframes idle-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-idle-float {
+  animation: idle-float 7s ease-in-out infinite;
+}
+
+/* Restrained pulse for CTA button */
+@keyframes button-subtle-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(255, 229, 0, 0);
+  }
+  50% {
+    box-shadow: 0 6px 20px 0 rgba(0, 0, 0, 0.3), 0 0 16px 2px rgba(255, 229, 0, 0.4);
+  }
+}
+
+.animate-btn-pulse {
+  animation: button-subtle-pulse 4.5s ease-in-out infinite;
+}
+
+.animate-btn-pulse:hover {
+  animation-play-state: paused;
+}
+
+/* Calm breathing indicator for Analyst synthesizing (no spinner or ping) */
+@keyframes calm-breathe {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+.animate-calm-breathe {
+  animation: calm-breathe 2.5s ease-in-out infinite;
+}
+
+/* Subtle continuous marquee animation */
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: inline-flex;
+  width: max-content;
+  animation: marquee 32s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-idle-float,
+  .animate-marquee,
+  .animate-btn-pulse,
+  .animate-calm-breathe {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

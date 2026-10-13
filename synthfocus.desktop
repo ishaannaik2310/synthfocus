@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SynthFocus
+GenericName=AI Focus Group Simulator
+Comment=Run synthetic focus groups with 10 AI personas in 80 seconds
+Exec=bash -c "cd $(dirname %k) && ./start.sh"
+Terminal=true
+Icon=utilities-terminal
+Categories=Development;Office;Utility;
+StartupNotify=true
