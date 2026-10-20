@@ -34,7 +34,7 @@ export async function runSimulationStream(
       body: JSON.stringify({ product_brief: productBrief }),
       signal,
     });
-  } catch (err: unknown) {
+  } catch {
     if (signal.aborted) {
       return;
     }
@@ -181,7 +181,7 @@ export async function runSimulationStream(
 
     // Flush any remaining partial buffer
     callbacks.onComplete(receivedFinalReport);
-  } catch (streamErr: unknown) {
+  } catch {
     if (signal.aborted) {
       return;
     }

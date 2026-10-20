@@ -28,7 +28,7 @@ function stripEmojiFromNode(node: React.ReactNode): React.ReactNode {
   ) {
     const props = node.props as { children: React.ReactNode; [key: string]: unknown };
     return React.cloneElement(
-      node as React.ReactElement<any>,
+      node as React.ReactElement<Record<string, unknown>>,
       props,
       stripEmojiFromNode(props.children)
     );
@@ -53,7 +53,7 @@ function stripLeadingCheckmark(node: React.ReactNode): React.ReactNode {
   ) {
     const props = node.props as { children: React.ReactNode; [key: string]: unknown };
     return React.cloneElement(
-      node as React.ReactElement<any>,
+      node as React.ReactElement<Record<string, unknown>>,
       props,
       stripLeadingCheckmark(props.children)
     );

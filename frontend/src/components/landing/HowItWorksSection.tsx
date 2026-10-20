@@ -60,7 +60,7 @@ export function HowItWorksSection() {
   const StepFigures = [
     // Step 01: Sphere head on rounded cylinder body (Yellow & Cream)
     (
-      <svg viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
+      <svg key="step-figure-1" viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
         <rect x="30" y="44" width="40" height="46" rx="20" fill="#FFE500" />
         <circle cx="50" cy="28" r="20" fill="#FFFFFF" />
         <circle cx="44" cy="24" r="6" fill="#F0F4FF" opacity="0.8" />
@@ -68,7 +68,7 @@ export function HowItWorksSection() {
     ),
     // Step 02: Sphere head on terracotta cylinder body
     (
-      <svg viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
+      <svg key="step-figure-2" viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
         <rect x="28" y="44" width="44" height="46" rx="20" fill="#D95D39" />
         <circle cx="50" cy="28" r="20" fill="#E87A5B" />
         <circle cx="44" cy="24" r="6" fill="#FFFFFF" opacity="0.3" />
@@ -76,7 +76,7 @@ export function HowItWorksSection() {
     ),
     // Step 03: Sphere head on soft blue cylinder body with golden cap
     (
-      <svg viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
+      <svg key="step-figure-3" viewBox="0 0 100 100" className="h-20 w-20 sm:h-24 sm:w-24 drop-shadow-lg" fill="none">
         <rect x="28" y="44" width="44" height="46" rx="20" fill="#60A5FA" />
         <circle cx="50" cy="28" r="20" fill="#93C5FD" />
         <polygon points="50,6 40,20 60,20" fill="#FFE500" />

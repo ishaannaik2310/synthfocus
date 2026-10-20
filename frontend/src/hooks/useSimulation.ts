@@ -67,7 +67,7 @@ export function useSimulation() {
   }, []);
 
   const startCountdown = useCallback(
-    (seconds: number, nextBatchIndex: number) => {
+    (seconds: number) => {
       clearThrottleTimer();
       setThrottleSecondsRemaining(seconds);
       setIsThrottling(true);
@@ -135,7 +135,7 @@ export function useSimulation() {
               totalBatches
             )
           );
-          startCountdown(event.data.seconds_remaining, nextBatch);
+          startCountdown(event.data.seconds_remaining);
           break;
         }
 

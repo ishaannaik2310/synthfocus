@@ -8,10 +8,8 @@ import { COPY } from "@/lib/copy";
 export function LandingNav() {
   const shouldReduceMotion = useReducedMotion();
   const [scrolled, setScrolled] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const handleScroll = () => {
       setScrolled(window.scrollY > 15);
     };

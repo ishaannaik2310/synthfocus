@@ -10,6 +10,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4+-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--stage-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-UI_Dashboard-FF4B4B?logo=streamlit&logoColor=white)](streamlit_app.py)
+[![CI](https://github.com/ishaannaik2310/synthfocus/actions/workflows/ci.yml/badge.svg)](https://github.com/ishaannaik2310/synthfocus/actions/workflows/ci.yml)
 
 ![SynthFocus Overview](docs/screenshots/landing_overview.png)
 
@@ -256,6 +258,27 @@ npm run dev
 ```
 - Application UI: `http://localhost:3000`
 - Run E2E Smoke Tests: `npx playwright test tests/smoke.spec.ts` (5/5 passing)
+
+### Option 3: Streamlit UI Dashboard (Kinetic Cobalt)
+
+In addition to the Next.js web application, SynthFocus includes a standalone, production-grade Python dashboard: [`streamlit_app.py`](streamlit_app.py).
+
+```bash
+streamlit run streamlit_app.py
+```
+- **Dual Execution Modes**: Connects to the running FastAPI SSE backend (`http://localhost:8000`) or runs the LangGraph engine directly in-process without requiring the backend server.
+- **Direction A ("Kinetic Cobalt") Aesthetic**: Full-bleed cobalt canvas (`#133EE8`), electric lemon yellow action accents (`#FFE500`), stark white scorecards (`#FFFFFF`), live 13s throttling telemetry, and executive markdown playbooks.
+
+---
+
+## 🧪 Continuous Integration (CI)
+
+SynthFocus enforces automated verification on every pull request and push to `main` via GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+- **Backend**: Runs the complete Pytest suite (22 tests) against Python 3.11 with cached pip wheels.
+- **Frontend**: Enforces ESLint checks and validates the Next.js production build.
+- **E2E Smoke Tests**: Executes Playwright smoke tests in Chromium against the built application using mocked SSE streams (zero live backend or API key required).
+- **Docker Validation**: Builds backend and frontend images and verifies the `/api/health` container probe.
+- **Security & Secret Audit**: Scans production dependencies via `pip-audit` and `npm audit --omit=dev`, and audits git history for secrets with Gitleaks.
 
 ---
 

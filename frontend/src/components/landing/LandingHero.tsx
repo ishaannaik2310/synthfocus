@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { COPY } from "@/lib/copy";
@@ -8,11 +7,6 @@ import { HeroPersonaCluster } from "./HeroPersonaCluster";
 
 export function LandingHero() {
   const shouldReduceMotion = useReducedMotion();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   return (
     <section className="relative overflow-hidden border-b border-white/10 bg-[#133ee8] pt-10 pb-10 sm:pt-12 sm:pb-12 lg:pt-16 lg:pb-14">
